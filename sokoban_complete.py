@@ -22,26 +22,7 @@ BUTTON_HOVER_COLOR = (160, 160, 160)
 TEXT_COLOR = (0, 0, 0)
 
 # Couleurs pour les différents éléments
-COLORS = {
-    -1: (100, 100, 100),    # Mur - Gris foncé
-    0: (255, 255, 255),     # Espace vide - Blanc
-    1: (255, 255, 0),       # Cible - Jaune
-    2: (139, 69, 19),       # Caisse - Marron
-    3: (0, 0, 255),         # Joueur - Bleu
-    4: (255, 165, 0),       # Caisse sur cible - Orange
-    5: (0, 255, 0)          # Joueur sur cible - Vert
-}
 
-# Caractères pour l'affichage textuel
-SYMBOLS = {
-    -1: '█',  # Mur
-    0: ' ',   # Espace vide
-    1: '.',   # Cible
-    2: '$',   # Caisse
-    3: '@',   # Joueur
-    4: '*',   # Caisse sur cible
-    5: '+'    # Joueur sur cible
-}
 
 class Button:
     """Classe pour créer des boutons cliquables"""
@@ -123,6 +104,10 @@ class SokobanCompleteGame:
         
         # Démarrer la musique
         self.audio.play_music("menu")
+
+        # Charger les assets
+        self.assets = {}
+        self.load_assets()
     
     def create_buttons(self):
         """Crée les boutons de l'interface"""
@@ -160,23 +145,10 @@ class SokobanCompleteGame:
         rect = pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)
         
         # Dessiner le fond de la cellule
-        if cell_value in COLORS:
-            pygame.draw.rect(self.screen, COLORS[cell_value], rect)
+        if cell_value in self.assets:
+            self.screen.blit(self.assets[cell_value], rect)
         else:
-            pygame.draw.rect(self.screen, COLORS[0], rect)
-        
-        # Dessiner la bordure
-        pygame.draw.rect(self.screen, GRID_COLOR, rect, 1)
-        
-        # Dessiner des symboles
-        if cell_value in SYMBOLS and cell_value != 0:
-            symbol = SYMBOLS[cell_value]
-            text_color = (255, 255, 255) if cell_value == -1 else (0, 0, 0)
-            
-            symbol_font = pygame.font.Font(None, 32)
-            text_surface = symbol_font.render(symbol, True, text_color)
-            text_rect = text_surface.get_rect(center=(x + CELL_SIZE//2, y + CELL_SIZE//2))
-            self.screen.blit(text_surface, text_rect)
+            pygame.draw.rect(self.screen, BACKGROUND_COLOR, rect) # Fallback pour les valeurs inconnues
     
     def draw_grid(self, grid):
         """Dessine la grille de jeu complète"""
@@ -504,6 +476,23 @@ class SokobanCompleteGame:
         pygame.quit()
         sys.exit()
 
+    def load_assets(self):
+        """Charge les images nécessaires pour le jeu"""
+        self.assets[-1] = pygame.image.load("assets/wall.png")
+        self.assets[-1] = pygame.transform.scale(self.assets[-1], (CELL_SIZE, CELL_SIZE))
+        self.assets[0] = pygame.image.load("assets/floor.png")
+        self.assets[0] = pygame.transform.scale(self.assets[0], (CELL_SIZE, CELL_SIZE))
+        self.assets[1] = pygame.image.load("assets/target.png")
+        self.assets[1] = pygame.transform.scale(self.assets[1], (CELL_SIZE, CELL_SIZE))
+        self.assets[2] = pygame.image.load("assets/box.png")
+        self.assets[2] = pygame.transform.scale(self.assets[2], (CELL_SIZE, CELL_SIZE))
+        self.assets[3] = pygame.image.load("assets/player_front.png")
+        self.assets[3] = pygame.transform.scale(self.assets[3], (CELL_SIZE, CELL_SIZE))
+        # Optionnel : ajoute les autres directions si tu veux
+        self.assets[4] = pygame.image.load("assets/box.png")  # Ou une image spéciale "box on target"
+        self.assets[4] = pygame.transform.scale(self.assets[4], (CELL_SIZE, CELL_SIZE))
+        self.assets[5] = pygame.image.load("assets/player_front.png")  # Ou une image spéciale "player on target"
+        self.assets[5] = pygame.transform.scale(self.assets[5], (CELL_SIZE, CELL_SIZE))
 
 # Point d'entrée principal
 if __name__ == "__main__":
@@ -518,4 +507,5 @@ if __name__ == "__main__":
         print(f"Erreur: {e}")
         pygame.quit()
         sys.exit()
+
 
