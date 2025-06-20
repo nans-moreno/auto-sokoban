@@ -491,7 +491,7 @@ class SokobanCompleteGame:
         # Optionnel : ajoute les autres directions si tu veux
         self.assets[4] = pygame.image.load("assets/box.png")  # Ou une image spéciale "box on target"
         self.assets[4] = pygame.transform.scale(self.assets[4], (CELL_SIZE, CELL_SIZE))
-        self.assets[5] = pygame.image.load("assets/player_front.png")  # Ou une image spéciale "player on target"
+        self.assets[5] = pygame.image.load("assets/player_on_target.png")  # Joueur sur cible
         self.assets[5] = pygame.transform.scale(self.assets[5], (CELL_SIZE, CELL_SIZE))
 
 # Point d'entrée principal

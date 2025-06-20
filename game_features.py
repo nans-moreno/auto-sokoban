@@ -219,11 +219,11 @@ class SokobanDatabase:
             return []
 
 
-# Module d'effets sonores (simulation)
+# Module d'effets sonores
 class SokobanAudio:
     """
     Classe pour gérer les effets sonores du jeu Sokoban
-    Note: Cette implémentation est une simulation car nous n'avons pas de fichiers audio
+    Utilise pygame.mixer pour jouer les fichiers audio
     """
     
     def __init__(self):
@@ -231,16 +231,37 @@ class SokobanAudio:
         self.music_enabled = True
         self.volume = 0.7
         
-        # Simulation des effets sonores
-        self.sound_effects = {
-            'move': "♪ Bruit de pas",
-            'push_box': "♪ Bruit de caisse poussée",
-            'box_on_target': "♪ Ding! Caisse placée",
-            'level_complete': "♪ Fanfare de victoire",
-            'undo': "♪ Son d'annulation",
-            'reset': "♪ Son de recommencement",
-            'menu_click': "♪ Clic de menu"
-        }
+        # Initialiser pygame mixer
+        try:
+            import pygame
+            pygame.mixer.init(frequency=22050, size=-16, channels=2, buffer=512)
+            self.pygame_available = True
+            
+            # Charger les effets sonores
+            self.sound_files = {
+                'move': 'sounds/move.wav',
+                'push_box': 'sounds/push_box.wav',
+                'box_on_target': 'sounds/box_on_target.wav',
+                'level_complete': 'sounds/level_complete.wav',
+                'undo': 'sounds/undo.wav',
+                'reset': 'sounds/reset.wav',
+                'menu_click': 'sounds/menu_click.wav'
+            }
+            
+            # Précharger les sons
+            self.sounds = {}
+            for name, file_path in self.sound_files.items():
+                try:
+                    self.sounds[name] = pygame.mixer.Sound(file_path)
+                    self.sounds[name].set_volume(self.volume)
+                except:
+                    print(f"⚠️ Impossible de charger le son: {file_path}")
+                    self.sounds[name] = None
+            
+        except ImportError:
+            print("⚠️ Pygame non disponible, mode silencieux")
+            self.pygame_available = False
+            self.sounds = {}
     
     def play_sound(self, sound_name):
         """
@@ -249,8 +270,14 @@ class SokobanAudio:
         Args:
             sound_name: Nom de l'effet sonore
         """
-        if self.sounds_enabled and sound_name in self.sound_effects:
-            print(f"🔊 {self.sound_effects[sound_name]}")
+        if not self.sounds_enabled or not self.pygame_available:
+            return
+        
+        if sound_name in self.sounds and self.sounds[sound_name]:
+            try:
+                self.sounds[sound_name].play()
+            except:
+                print(f"⚠️ Erreur lors de la lecture du son: {sound_name}")
     
     def play_music(self, music_name="background"):
         """
@@ -264,8 +291,13 @@ class SokobanAudio:
     
     def stop_music(self):
         """Arrête la musique de fond"""
-        if self.music_enabled:
-            print("🔇 Musique arrêtée")
+        if self.music_enabled and self.pygame_available:
+            try:
+                import pygame
+                pygame.mixer.music.stop()
+            except:
+                pass
+        print("🔇 Musique arrêtée")
     
     def set_volume(self, volume):
         """
@@ -275,6 +307,13 @@ class SokobanAudio:
             volume: Volume entre 0.0 et 1.0
         """
         self.volume = max(0.0, min(1.0, volume))
+        
+        # Mettre à jour le volume de tous les sons
+        if self.pygame_available:
+            for sound in self.sounds.values():
+                if sound:
+                    sound.set_volume(self.volume)
+        
         print(f"🔊 Volume: {int(self.volume * 100)}%")
     
     def toggle_sounds(self):
@@ -351,7 +390,7 @@ class SokobanLevels:
             [-1, -1, -1, -1, -1, -1, -1, -1, -1]
         ])
         
-        # Niveau 5 - Très difficile
+        # Niveau 5 - Très difficile (corrigé)
         levels.append([
             [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1],
             [-1,  0,  0,  0,  0,  0,  0,  0,  0,  0, -1],
@@ -361,7 +400,7 @@ class SokobanLevels:
             [-1,  1,  0,  0,  0,  3,  0,  0,  0,  1, -1],
             [-1, -1, -1,  2,  0,  1,  0,  2, -1, -1, -1],
             [-1,  0,  0,  0,  0,  1,  0,  0,  0,  0, -1],
-            [-1,  0,  2,  0, -1, -1, -1,  0,  2,  0, -1],
+            [-1,  0,  0,  0, -1, -1, -1,  0,  0,  0, -1],
             [-1,  0,  0,  0,  0,  0,  0,  0,  0,  0, -1],
             [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1]
         ])
@@ -381,7 +420,7 @@ class SokobanLevels:
             {"name": "Premiers pas", "difficulty": "Facile", "boxes": 2},
             {"name": "Obstacles", "difficulty": "Moyen", "boxes": 4},
             {"name": "Défi", "difficulty": "Difficile", "boxes": 3},
-            {"name": "Maître", "difficulty": "Très difficile", "boxes": 6}
+            {"name": "Maître", "difficulty": "Très difficile", "boxes": 4}
         ]
 
 
