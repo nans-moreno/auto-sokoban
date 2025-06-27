@@ -1,13 +1,10 @@
-"""
-Version complète du jeu Sokoban avec toutes les fonctionnalités
-Intègre la logique de base, l'interface graphique et les fonctionnalités avancées
-"""
-
 import pygame
 import sys
 import time
+import os
 from game_logic import SokobanGame
 from game_features import SokobanDatabase, SokobanAudio, SokobanLevels
+from sokoban_bot import SokobanBot # Import du bot ML
 
 # Initialisation de Pygame
 pygame.init()
@@ -20,8 +17,8 @@ MENU_COLOR = (220, 220, 220)
 BUTTON_COLOR = (180, 180, 180)
 BUTTON_HOVER_COLOR = (160, 160, 160)
 TEXT_COLOR = (0, 0, 0)
-
-# Couleurs pour les différents éléments
+SUCCESS_COLOR = (0, 150, 0)
+ERROR_COLOR = (200, 0, 0)
 
 
 class Button:
@@ -62,7 +59,6 @@ class SokobanCompleteGame:
     def __init__(self):
         # Initialisation des composants
         self.database = SokobanDatabase()
-        self.audio = SokobanAudio()
         
         # Charger les niveaux étendus
         extended_levels = SokobanLevels.get_extended_levels()
@@ -71,18 +67,19 @@ class SokobanCompleteGame:
         self.level_info = SokobanLevels.get_level_info()
         
         # Interface graphique
-        self.window_width = 900
-        self.window_height = 700
+        self.window_width = 1000
+        self.window_height = 750
         self.screen = pygame.display.set_mode((self.window_width, self.window_height))
-        pygame.display.set_caption("Sokoban - Jeu Complet")
+        pygame.display.set_caption("Sokoban - Jeu Complet avec Bot ML")
         
         # Polices
         self.font = pygame.font.Font(None, 24)
         self.title_font = pygame.font.Font(None, 36)
         self.small_font = pygame.font.Font(None, 20)
+        self.large_font = pygame.font.Font(None, 48)
         
         # État du jeu
-        self.state = "MENU"  # MENU, GAME, SCORES, SETTINGS
+        self.state = "MENU"  # MENU, GAME, SCORES, SETTINGS, BOT_GAME
         self.player_name = "Joueur"
         self.start_time = None
         self.clock = pygame.time.Clock()
@@ -91,6 +88,18 @@ class SokobanCompleteGame:
         self.game_area_x = 50
         self.game_area_y = 120
         
+        # Bot ML
+        self.bot = SokobanBot(self.game)
+        self.bot_playing = False
+        self.bot_actions = []
+        self.current_bot_action_index = 0
+        self.bot_level_to_play = 0
+        self.bot_training = False
+        self.bot_training_progress = 0
+        self.bot_status = "Prêt"
+        self.bot_last_action_time = 0
+        self.bot_action_delay = 300  # millisecondes entre les actions du bot
+
         # Boutons
         self.create_buttons()
         
@@ -101,44 +110,53 @@ class SokobanCompleteGame:
             pygame.K_LEFT: 'LEFT',
             pygame.K_RIGHT: 'RIGHT'
         }
-        
-        # Démarrer la musique
-        self.audio.play_music("menu")
 
         # Charger les assets
         self.assets = {}
         self.load_assets()
+
     
     def create_buttons(self):
         """Crée les boutons de l'interface"""
         # Boutons du menu principal
         self.menu_buttons = [
-            Button(350, 200, 200, 50, "Nouveau Jeu", self.font),
-            Button(350, 270, 200, 50, "Scores", self.font),
-            Button(350, 340, 200, 50, "Paramètres", self.font),
-            Button(350, 410, 200, 50, "Quitter", self.font)
+            Button(400, 200, 200, 50, "Nouveau Jeu", self.font),
+            Button(400, 270, 200, 50, "Scores", self.font),
+            Button(400, 340, 200, 50, "Paramètres", self.font),
+            Button(400, 410, 200, 50, "Bot ML", self.font),
+            Button(400, 480, 200, 50, "Quitter", self.font)
         ]
         
         # Boutons en jeu
         self.game_buttons = [
-            Button(650, 150, 120, 40, "Annuler (U)", self.small_font),
-            Button(650, 200, 120, 40, "Recommencer (R)", self.small_font),
-            Button(650, 250, 120, 40, "Menu (M)", self.small_font),
-            Button(650, 300, 120, 40, "Scores", self.small_font)
+            Button(700, 150, 150, 40, "Annuler (U)", self.small_font),
+            Button(700, 200, 150, 40, "Recommencer (R)", self.small_font),
+            Button(700, 250, 150, 40, "Menu (M)", self.small_font),
+            Button(700, 300, 150, 40, "Scores", self.small_font),
+            Button(700, 350, 150, 40, "Niveau suivant", self.small_font)
         ]
         
         # Boutons des scores
         self.score_buttons = [
-            Button(350, 600, 200, 50, "Retour", self.font)
+            Button(400, 650, 200, 50, "Retour", self.font)
         ]
         
         # Boutons des paramètres
         self.settings_buttons = [
-            Button(250, 200, 200, 40, "Sons: ON", self.font),
-            Button(250, 250, 200, 40, "Musique: ON", self.font),
-            Button(250, 300, 200, 40, "Volume: 70%", self.font),
-            Button(350, 600, 200, 50, "Retour", self.font)
+            Button(300, 200, 200, 40, "Sons: ON", self.font),
+            Button(300, 250, 200, 40, "Musique: ON", self.font),
+            Button(300, 300, 200, 40, "Volume: 70%", self.font),
+            Button(400, 650, 200, 50, "Retour", self.font)
         ]
+
+        # Boutons pour le bot ML
+        self.bot_buttons = []
+        for i in range(len(self.game.levels)):
+            self.bot_buttons.append(Button(200, 200 + i * 70, 200, 50, f"Entraîner Niveau {i + 1}", self.font))
+            self.bot_buttons.append(Button(450, 200 + i * 70, 200, 50, f"Jouer Niveau {i + 1}", self.font))
+        self.bot_buttons.append(Button(700, 200, 150, 50, "Arrêter Bot", self.font))
+        self.bot_buttons.append(Button(400, 650, 200, 50, "Retour au Menu", self.font))
+
     
     def draw_cell(self, x, y, cell_value):
         """Dessine une cellule de la grille"""
@@ -148,7 +166,19 @@ class SokobanCompleteGame:
         if cell_value in self.assets:
             self.screen.blit(self.assets[cell_value], rect)
         else:
-            pygame.draw.rect(self.screen, BACKGROUND_COLOR, rect) # Fallback pour les valeurs inconnues
+            # Fallback avec des couleurs simples
+            colors = {
+                -1: (100, 100, 100),  # Mur - gris foncé
+                0: (240, 240, 240),   # Sol - gris clair
+                1: (255, 255, 0),     # Cible - jaune
+                2: (139, 69, 19),     # Caisse - marron
+                3: (0, 0, 255),       # Joueur - bleu
+                4: (255, 165, 0),     # Caisse sur cible - orange
+                5: (0, 255, 0)        # Joueur sur cible - vert
+            }
+            color = colors.get(cell_value, (255, 255, 255))
+            pygame.draw.rect(self.screen, color, rect)
+            pygame.draw.rect(self.screen, (0, 0, 0), rect, 1)
     
     def draw_grid(self, grid):
         """Dessine la grille de jeu complète"""
@@ -168,15 +198,27 @@ class SokobanCompleteGame:
         """Dessine le menu principal"""
         self.screen.fill(BACKGROUND_COLOR)
         
-        # Titre
-        title_text = self.title_font.render("SOKOBAN", True, TEXT_COLOR)
-        title_rect = title_text.get_rect(center=(self.window_width//2, 100))
+        # Titre principal
+        title_text = self.large_font.render("SOKOBAN", True, TEXT_COLOR)
+        title_rect = title_text.get_rect(center=(self.window_width//2, 80))
         self.screen.blit(title_text, title_rect)
         
         # Sous-titre
-        subtitle_text = self.font.render("Jeu de puzzle classique", True, TEXT_COLOR)
-        subtitle_rect = subtitle_text.get_rect(center=(self.window_width//2, 140))
+        subtitle_text = self.font.render("Jeu de puzzle classique avec Bot ML", True, TEXT_COLOR)
+        subtitle_rect = subtitle_text.get_rect(center=(self.window_width//2, 130))
         self.screen.blit(subtitle_text, subtitle_rect)
+        
+        # Instructions
+        instructions = [
+            "Poussez toutes les caisses (■) sur les cibles (○)",
+            "Utilisez les flèches pour vous déplacer",
+            "Le bot ML peut apprendre à résoudre les niveaux automatiquement"
+        ]
+        
+        for i, instruction in enumerate(instructions):
+            text = self.small_font.render(instruction, True, TEXT_COLOR)
+            text_rect = text.get_rect(center=(self.window_width//2, 560 + i * 25))
+            self.screen.blit(text, text_rect)
         
         # Boutons
         for button in self.menu_buttons:
@@ -196,8 +238,8 @@ class SokobanCompleteGame:
         
         # Informations du niveau
         level_info = self.level_info[self.game.current_level] if self.game.current_level < len(self.level_info) else {}
-        level_name = level_info.get('name', f'Niveau {game_state["level"]}')
-        difficulty = level_info.get('difficulty', 'Inconnu')
+        level_name = level_info.get("name", f'Niveau {game_state["level"]}')
+        difficulty = level_info.get("difficulty", 'Inconnu')
         
         level_text = self.font.render(f"{level_name} - {difficulty}", True, TEXT_COLOR)
         self.screen.blit(level_text, (10, 50))
@@ -225,28 +267,88 @@ class SokobanCompleteGame:
         
         # Instructions
         instructions = [
-            "Flèches: Déplacer",
-            "But: Pousser toutes",
-            "les caisses ($) sur",
-            "les cibles (.)",
+            "Contrôles:",
+            "↑↓←→ : Déplacer",
+            "U : Annuler",
+            "R : Recommencer",
+            "M : Menu",
             "",
-            "Caisse sur cible: *",
-            "Joueur sur cible: +"
+            "Légende:",
+            "■ : Caisse",
+            "○ : Cible",
+            "● : Caisse placée",
+            "☺ : Joueur"
+        ]
+        
+        for i, instruction in enumerate(instructions):
+            color = TEXT_COLOR if instruction else BACKGROUND_COLOR
+            text = self.small_font.render(instruction, True, color)
+            self.screen.blit(text, (700, 400 + i * 20))
+        
+        # Message de victoire
+        if game_state['is_complete']:
+            victory_text = self.title_font.render("NIVEAU TERMINÉ!", True, SUCCESS_COLOR)
+            text_rect = victory_text.get_rect(center=(self.window_width//2, self.window_height - 150))
+            self.screen.blit(victory_text, text_rect)
+            
+            continue_text = self.font.render("Appuyez sur ESPACE pour continuer", True, TEXT_COLOR)
+            continue_rect = continue_text.get_rect(center=(self.window_width//2, self.window_height - 120))
+            self.screen.blit(continue_text, continue_rect)
+
+    def draw_bot_game(self):
+        """Dessine l'écran du bot ML"""
+        self.screen.fill(BACKGROUND_COLOR)
+
+        # Titre
+        title_text = self.title_font.render("BOT ML SOKOBAN", True, TEXT_COLOR)
+        title_rect = title_text.get_rect(center=(self.window_width//2, 50))
+        self.screen.blit(title_text, title_rect)
+
+        # Statut du bot
+        status_color = SUCCESS_COLOR if self.bot_status == "Terminé" else TEXT_COLOR
+        if self.bot_training:
+            status_color = ERROR_COLOR
+        
+        status_text = self.font.render(f"Statut: {self.bot_status}", True, status_color)
+        status_rect = status_text.get_rect(center=(self.window_width//2, 100))
+        self.screen.blit(status_text, status_rect)
+
+        # Boutons
+        for button in self.bot_buttons:
+            button.draw(self.screen)
+
+        # Affichage du jeu du bot
+        if self.bot_playing:
+            level_text = self.font.render(f"Le bot joue le niveau {self.bot_level_to_play + 1}", True, TEXT_COLOR)
+            level_rect = level_text.get_rect(center=(self.window_width//2, 350))
+            self.screen.blit(level_text, level_rect)
+
+            # Afficher la grille du bot en temps réel
+            game_state = self.game.get_game_state()
+            if game_state:
+                # Centrer la grille
+                grid_width = len(game_state['grid'][0]) * CELL_SIZE if game_state['grid'] else 0
+                grid_height = len(game_state['grid']) * CELL_SIZE if game_state['grid'] else 0
+                self.game_area_x = (self.window_width - grid_width) // 2
+                self.game_area_y = 380
+                
+                self.draw_grid(game_state['grid'])
+                
+                moves_text = self.font.render(f"Mouvements du bot: {game_state['moves']}", True, TEXT_COLOR)
+                moves_rect = moves_text.get_rect(center=(self.window_width//2, 380 + grid_height + 30))
+                self.screen.blit(moves_text, moves_rect)
+
+        # Instructions
+        instructions = [
+            "Le bot utilise l'apprentissage par renforcement (Q-Learning)",
+            "Entraînez d'abord le bot sur un niveau, puis regardez-le jouer",
+            "Plus l'entraînement est long, meilleure sera la performance"
         ]
         
         for i, instruction in enumerate(instructions):
             text = self.small_font.render(instruction, True, TEXT_COLOR)
-            self.screen.blit(text, (650, 350 + i * 20))
-        
-        # Message de victoire
-        if game_state['is_complete']:
-            victory_text = self.title_font.render("NIVEAU TERMINÉ!", True, (0, 255, 0))
-            text_rect = victory_text.get_rect(center=(self.window_width//2, self.window_height - 100))
-            self.screen.blit(victory_text, text_rect)
-            
-            continue_text = self.font.render("Appuyez sur ESPACE pour continuer", True, TEXT_COLOR)
-            continue_rect = continue_text.get_rect(center=(self.window_width//2, self.window_height - 70))
-            self.screen.blit(continue_text, continue_rect)
+            text_rect = text.get_rect(center=(self.window_width//2, 150 + i * 25))
+            self.screen.blit(text, text_rect)
     
     def draw_scores(self):
         """Dessine l'écran des scores"""
@@ -263,14 +365,14 @@ class SokobanCompleteGame:
         # En-têtes
         headers = ["Rang", "Joueur", "Niveau", "Score", "Mouvements", "Temps"]
         header_y = 120
-        header_positions = [50, 150, 250, 350, 450, 550]
+        header_positions = [100, 200, 300, 400, 500, 600]
         
         for i, header in enumerate(headers):
             text = self.font.render(header, True, TEXT_COLOR)
             self.screen.blit(text, (header_positions[i], header_y))
         
         # Ligne de séparation
-        pygame.draw.line(self.screen, TEXT_COLOR, (50, header_y + 30), (650, header_y + 30), 2)
+        pygame.draw.line(self.screen, TEXT_COLOR, (100, header_y + 30), (700, header_y + 30), 2)
         
         # Scores
         for i, score in enumerate(best_scores[:10]):
@@ -301,11 +403,6 @@ class SokobanCompleteGame:
         title_rect = title_text.get_rect(center=(self.window_width//2, 50))
         self.screen.blit(title_text, title_rect)
         
-        # Mettre à jour les textes des boutons
-        self.settings_buttons[0].text = f"Sons: {'ON' if self.audio.sounds_enabled else 'OFF'}"
-        self.settings_buttons[1].text = f"Musique: {'ON' if self.audio.music_enabled else 'OFF'}"
-        self.settings_buttons[2].text = f"Volume: {int(self.audio.volume * 100)}%"
-        
         # Boutons
         for button in self.settings_buttons:
             button.draw(self.screen)
@@ -313,7 +410,8 @@ class SokobanCompleteGame:
         # Instructions
         instructions = [
             "Cliquez sur les boutons pour modifier les paramètres",
-            "Les paramètres sont sauvegardés automatiquement"
+            "Les paramètres sont sauvegardés automatiquement",
+            "Note: Audio désactivé pour éviter les erreurs système"
         ]
         
         for i, instruction in enumerate(instructions):
@@ -325,18 +423,17 @@ class SokobanCompleteGame:
         """Gère les événements du menu"""
         for i, button in enumerate(self.menu_buttons):
             if button.handle_event(event):
-                self.audio.play_sound('menu_click')
-                
                 if i == 0:  # Nouveau Jeu
                     self.state = "GAME"
                     self.game.start_level(0)
                     self.start_time = time.time()
-                    self.audio.play_music("game")
                 elif i == 1:  # Scores
                     self.state = "SCORES"
                 elif i == 2:  # Paramètres
                     self.state = "SETTINGS"
-                elif i == 3:  # Quitter
+                elif i == 3:  # Bot ML
+                    self.state = "BOT_GAME"
+                elif i == 4:  # Quitter
                     return False
         return True
     
@@ -348,8 +445,6 @@ class SokobanCompleteGame:
                 result = self.game.move_player(direction)
                 
                 if result == 'LEVEL_COMPLETE':
-                    self.audio.play_sound('level_complete')
-                    
                     # Sauvegarder le score
                     elapsed_time = int(time.time() - self.start_time) if self.start_time else 0
                     game_state = self.game.get_game_state()
@@ -360,21 +455,16 @@ class SokobanCompleteGame:
                         elapsed_time,
                         game_state['score']
                     )
-                elif result:
-                    self.audio.play_sound('move')
             
             elif event.key == pygame.K_u:
-                if self.game.undo_move():
-                    self.audio.play_sound('undo')
+                self.game.undo_move()
             
             elif event.key == pygame.K_r:
                 self.game.reset_level()
                 self.start_time = time.time()
-                self.audio.play_sound('reset')
             
             elif event.key == pygame.K_m:
                 self.state = "MENU"
-                self.audio.play_music("menu")
             
             elif event.key == pygame.K_SPACE:
                 game_state = self.game.get_game_state()
@@ -384,25 +474,23 @@ class SokobanCompleteGame:
                         self.start_time = time.time()
                     else:
                         self.state = "MENU"
-                        self.audio.play_music("menu")
         
         # Boutons
         for i, button in enumerate(self.game_buttons):
             if button.handle_event(event):
-                self.audio.play_sound('menu_click')
-                
                 if i == 0:  # Annuler
-                    if self.game.undo_move():
-                        self.audio.play_sound('undo')
+                    self.game.undo_move()
                 elif i == 1:  # Recommencer
                     self.game.reset_level()
                     self.start_time = time.time()
-                    self.audio.play_sound('reset')
                 elif i == 2:  # Menu
                     self.state = "MENU"
-                    self.audio.play_music("menu")
                 elif i == 3:  # Scores
                     self.state = "SCORES"
+                elif i == 4:  # Niveau suivant
+                    if self.game.has_next_level():
+                        self.game.next_level()
+                        self.start_time = time.time()
         
         return True
     
@@ -410,7 +498,6 @@ class SokobanCompleteGame:
         """Gère les événements de l'écran des scores"""
         for button in self.score_buttons:
             if button.handle_event(event):
-                self.audio.play_sound('menu_click')
                 self.state = "MENU"
         return True
     
@@ -418,38 +505,124 @@ class SokobanCompleteGame:
         """Gère les événements de l'écran des paramètres"""
         for i, button in enumerate(self.settings_buttons):
             if button.handle_event(event):
-                self.audio.play_sound('menu_click')
-                
-                if i == 0:  # Sons
-                    self.audio.toggle_sounds()
-                elif i == 1:  # Musique
-                    self.audio.toggle_music()
-                elif i == 2:  # Volume
-                    new_volume = (self.audio.volume + 0.1) % 1.1
-                    if new_volume > 1.0:
-                        new_volume = 0.1
-                    self.audio.set_volume(new_volume)
-                elif i == 3:  # Retour
+                if i == 3:  # Retour
                     self.state = "MENU"
         return True
+
+    def handle_bot_game_events(self, event):
+        """Gère les événements de l'écran du bot ML"""
+        for i, button in enumerate(self.bot_buttons):
+            if button.handle_event(event):
+                if i < len(self.game.levels) * 2: # Boutons d'entraînement et de jeu
+                    level_index = (i // 2)
+                    if i % 2 == 0: # Entraîner
+                        if not self.bot_training and not self.bot_playing:
+                            self.start_bot_training(level_index)
+                    else: # Jouer
+                        if not self.bot_training and not self.bot_playing:
+                            self.start_bot_playing(level_index)
+                elif i == len(self.game.levels) * 2:  # Arrêter Bot
+                    self.stop_bot()
+                elif i == len(self.game.levels) * 2 + 1:  # Retour au Menu
+                    self.stop_bot()
+                    self.state = "MENU"
+        return True
+
+    def start_bot_training(self, level_index):
+        """Démarre l'entraînement du bot"""
+        self.bot_level_to_play = level_index
+        self.bot_training = True
+        self.bot_status = f"Entraînement niveau {level_index + 1}..."
+        
+    def start_bot_playing(self, level_index):
+        """Démarre le jeu du bot"""
+        self.bot_level_to_play = level_index
+        self.bot_status = f"Résolution niveau {level_index + 1}..."
+        solved, moves, actions = self.bot.play_level(level_index=level_index)
+        if solved:
+            self.bot_actions = actions
+            self.current_bot_action_index = 0
+            self.game.start_level(level_index)
+            self.bot_playing = True
+            self.bot_last_action_time = pygame.time.get_ticks()
+            self.bot_status = f"Bot joue niveau {level_index + 1}"
+        else:
+            self.bot_status = f"Échec niveau {level_index + 1} - Entraînez d'abord!"
     
+    def stop_bot(self):
+        """Arrête le bot"""
+        self.bot_playing = False
+        self.bot_training = False
+        self.bot_status = "Arrêté"
+
+    def load_assets(self):
+        """Charge les images des éléments du jeu"""
+        try:
+            # Vérifier si le fichier d'assets existe
+            assets_path = os.path.join(os.path.dirname(__file__), 'assets', 'sokoban_assets.png')
+            if os.path.exists(assets_path):
+                # Charger l'image complète des assets
+                sokoban_assets_img = pygame.image.load(assets_path).convert_alpha()
+
+                # Définir les coordonnées de chaque asset dans l'image complète
+                asset_coords = {
+                    -1: (0, 0),   # Mur
+                    0: (40, 0),   # Sol
+                    1: (80, 0),   # Cible
+                    2: (120, 0),  # Caisse
+                    3: (160, 0),  # Joueur (face)
+                    4: (200, 0),  # Caisse sur cible
+                    5: (240, 0)   # Joueur sur cible
+                }
+
+                for key, coords in asset_coords.items():
+                    x, y = coords
+                    # Extraire la sous-surface pour chaque asset
+                    self.assets[key] = pygame.transform.scale(sokoban_assets_img.subsurface(pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)), (CELL_SIZE, CELL_SIZE))
+                
+                print("Assets chargés avec succès depuis l'image.")
+            else:
+                print("Fichier d'assets non trouvé, utilisation des couleurs par défaut.")
+
+        except pygame.error as e:
+            print(f"Erreur de chargement des assets: {e}")
+            print("Utilisation des couleurs par défaut.")
+
+    def update_bot(self):
+        """Met à jour la logique du bot"""
+        current_time = pygame.time.get_ticks()
+        
+        # Entraînement du bot (non-bloquant)
+        if self.bot_training:
+            # Entraîner par petits blocs pour ne pas bloquer l'interface
+            # Augmenter le nombre d'épisodes par bloc pour un entraînement plus rapide
+            self.bot.train(num_episodes=50, level_index=self.bot_level_to_play)
+            self.bot_training = False # Entraînement terminé pour ce bloc
+            self.bot_status = f"Entraînement terminé niveau {self.bot_level_to_play + 1}"
+        
+        # Jeu du bot
+        if self.bot_playing and current_time - self.bot_last_action_time > self.bot_action_delay:
+            if self.current_bot_action_index < len(self.bot_actions):
+                action = self.bot_actions[self.current_bot_action_index]
+                result = self.game.move_player(action)
+                self.current_bot_action_index += 1
+                self.bot_last_action_time = current_time
+                
+                if self.game.board.is_level_complete():
+                    self.bot_playing = False
+                    self.bot_status = f"Niveau {self.bot_level_to_play + 1} terminé!"
+            else:
+                self.bot_playing = False
+                self.bot_status = f"Niveau {self.bot_level_to_play + 1} - Actions épuisées"
+
     def run(self):
         """Boucle principale du jeu"""
         running = True
-        
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        if self.state == "GAME":
-                            self.state = "MENU"
-                            self.audio.play_music("menu")
-                        else:
-                            running = False
                 
-                # Gérer les événements selon l'état
                 if self.state == "MENU":
                     running = self.handle_menu_events(event)
                 elif self.state == "GAME":
@@ -458,8 +631,13 @@ class SokobanCompleteGame:
                     running = self.handle_scores_events(event)
                 elif self.state == "SETTINGS":
                     running = self.handle_settings_events(event)
-            
-            # Dessiner selon l'état
+                elif self.state == "BOT_GAME":
+                    running = self.handle_bot_game_events(event)
+
+            # Mise à jour de la logique du bot
+            self.update_bot()
+
+            # Logique de mise à jour et de dessin
             if self.state == "MENU":
                 self.draw_menu()
             elif self.state == "GAME":
@@ -468,44 +646,12 @@ class SokobanCompleteGame:
                 self.draw_scores()
             elif self.state == "SETTINGS":
                 self.draw_settings()
-            
+            elif self.state == "BOT_GAME":
+                self.draw_bot_game()
+
             pygame.display.flip()
-            self.clock.tick(60)
-        
-        # Nettoyage
+            self.clock.tick(60) # Limite le jeu à 60 FPS
+
         pygame.quit()
         sys.exit()
-
-    def load_assets(self):
-        """Charge les images nécessaires pour le jeu"""
-        self.assets[-1] = pygame.image.load("assets/wall.png")
-        self.assets[-1] = pygame.transform.scale(self.assets[-1], (CELL_SIZE, CELL_SIZE))
-        self.assets[0] = pygame.image.load("assets/floor.png")
-        self.assets[0] = pygame.transform.scale(self.assets[0], (CELL_SIZE, CELL_SIZE))
-        self.assets[1] = pygame.image.load("assets/target.png")
-        self.assets[1] = pygame.transform.scale(self.assets[1], (CELL_SIZE, CELL_SIZE))
-        self.assets[2] = pygame.image.load("assets/box.png")
-        self.assets[2] = pygame.transform.scale(self.assets[2], (CELL_SIZE, CELL_SIZE))
-        self.assets[3] = pygame.image.load("assets/player_front.png")
-        self.assets[3] = pygame.transform.scale(self.assets[3], (CELL_SIZE, CELL_SIZE))
-        # Optionnel : ajoute les autres directions si tu veux
-        self.assets[4] = pygame.image.load("assets/box.png")  # Ou une image spéciale "box on target"
-        self.assets[4] = pygame.transform.scale(self.assets[4], (CELL_SIZE, CELL_SIZE))
-        self.assets[5] = pygame.image.load("assets/player_on_target.png")  # Joueur sur cible
-        self.assets[5] = pygame.transform.scale(self.assets[5], (CELL_SIZE, CELL_SIZE))
-
-# Point d'entrée principal
-if __name__ == "__main__":
-    try:
-        game = SokobanCompleteGame()
-        game.run()
-    except KeyboardInterrupt:
-        print("\nJeu interrompu par l'utilisateur")
-        pygame.quit()
-        sys.exit()
-    except Exception as e:
-        print(f"Erreur: {e}")
-        pygame.quit()
-        sys.exit()
-
 
